@@ -7,4 +7,6 @@ class RecommendationRequest(BaseModel):
     goal: str
     preferred_parts: List[str]
     level: str
+    gender: str
+    weight: int
     top_k: Optional[int] = 5

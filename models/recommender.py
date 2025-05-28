@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any
 
+
 # 목표별 반복 횟수 (sets x reps)
 rep_ranges = {
     "muscle_gain": "4x8",
@@ -19,21 +20,34 @@ goal_to_types = {
     "maintenance": ["strength", "cardio", "HIIT"]
 }
 
+# 사용자 특성 기반 weight 추정
+def estimate_weight(base, level, goal, gender):
+    level_factor = {"beginner": 0.5, "intermediate": 0.75, "advanced": 1.0}.get(level, 0.6)
+    goal_factor = {"fat_loss": 0.7, "maintenance": 0.85, "muscle_gain": 1.0}.get(goal, 0.85)
+    gender_factor = 0.8 if gender.lower() == "female" else 1.0
+    return round(base * level_factor * goal_factor * gender_factor)
+
+# DB에서 운동 정보 가져오기
 def fetch_exercises() -> pd.DataFrame:
     conn = get_connection()
-    with conn.cursor() as cursor:
+    with conn.cursor(dictionary=True) as cursor:
         cursor.execute("SELECT * FROM exercises")
         rows = cursor.fetchall()
     conn.close()
     df = pd.DataFrame(rows)
+
+    # 문자열 컬럼 처리
     for col in ["target_parts", "equipment"]:
         df[col] = df[col].apply(lambda x: eval(x) if isinstance(x, str) else x)
+
+    df["base_weight"] = df["base_weight"].fillna(20).astype(int)
     return df
 
+# 추천 생성 함수
 def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
     df = fetch_exercises()
 
-    # 벡터화 + 유사도 계산
+    # 유사도 계산용 TF-IDF 벡터 생성
     queries = [f"{p} {req.level} {t}" for p in req.preferred_parts for t in goal_to_types.get(req.goal, [])]
     vectorizer = TfidfVectorizer()
     doc_matrix = vectorizer.fit_transform(df["name"] + " " + df["type"] + " " + df["level"])
@@ -43,7 +57,7 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
 
     top_k = req.top_k or 5
 
-    # 1. 각 부위별 최고 운동 1개씩 선택
+    # 부위별 최고 운동 1개씩 선택
     selected = []
     selected_ids = set()
     for part in req.preferred_parts:
@@ -54,12 +68,12 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
             selected.append(best)
             selected_ids.add(best["id"])
 
-    # 2. 나머지 운동은 score 순 정렬 후 채우기
+    # 나머지 운동은 score 기준 정렬
     remaining = df[~df["id"].isin(selected_ids)].sort_values("score", ascending=False)
     extra = remaining.head(top_k - len(selected))
     final = selected + extra.to_dict("records")
 
-    # 3. sets/reps 추출
+    # 반복 수 추출
     rep_key = rep_ranges.get(req.goal, "3x12")
     rep_mapping = {
         "4x8": (4, 8),
@@ -68,18 +82,20 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
     }
     sets, reps = rep_mapping.get(rep_key, (3, 12))
 
-    # 4. routineItems 생성
+    # routineItems 생성
     routine_items = []
     for i, row in enumerate(final):
+        base_weight = row.get("base_weight", 20)
+        weight = estimate_weight(base_weight, req.level, req.goal, req.gender)
         routine_items.append({
             "exerciseId": row["id"],
-            "exerciseName": row["name"],
             "sets": sets,
             "reps": reps,
+            "weight": weight,
             "order": i + 1
         })
 
-    # 5. 루틴 이름 생성
+    # 루틴 이름 생성
     if len(req.preferred_parts) == 1:
         routine_name = f"{req.preferred_parts[0]} 루틴"
     else:

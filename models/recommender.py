@@ -37,7 +37,7 @@ def fetch_exercises() -> pd.DataFrame:
     df = pd.DataFrame(rows)
 
     # 문자열 컬럼 처리
-    for col in ["target_parts", "equipment"]:
+    for col in ["target"]:
         df[col] = df[col].apply(lambda x: eval(x) if isinstance(x, str) else x)
 
     df["base_weight"] = df["base_weight"].fillna(20).astype(int)
@@ -47,8 +47,12 @@ def fetch_exercises() -> pd.DataFrame:
 def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
     df = fetch_exercises()
 
+    goal = req.goal.lower()
+    level = req.level.lower()
+    gender = req.gender.lower()
+
     # 유사도 계산용 TF-IDF 벡터 생성
-    queries = [f"{p} {req.level} {t}" for p in req.preferred_parts for t in goal_to_types.get(req.goal, [])]
+    queries = [f"{p} {level} {t}" for p in req.preferred_parts for t in goal_to_types.get(goal, [])]
     vectorizer = TfidfVectorizer()
     doc_matrix = vectorizer.fit_transform(df["name"] + " " + df["type"] + " " + df["level"])
     user_vecs = vectorizer.transform(queries)
@@ -61,7 +65,7 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
     selected = []
     selected_ids = set()
     for part in req.preferred_parts:
-        mask = df["target_parts"].apply(lambda parts: part in parts if isinstance(parts, list) else False)
+        mask = df["target"].apply(lambda parts: part in parts if isinstance(parts, list) else False)
         part_df = df[mask]
         if not part_df.empty:
             best = part_df.sort_values("score", ascending=False).iloc[0]
@@ -74,7 +78,7 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
     final = selected + extra.to_dict("records")
 
     # 반복 수 추출
-    rep_key = rep_ranges.get(req.goal, "3x12")
+    rep_key = rep_ranges.get(goal, "3x12")
     rep_mapping = {
         "4x8": (4, 8),
         "3x15": (3, 15),
@@ -86,7 +90,7 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
     routine_items = []
     for i, row in enumerate(final):
         base_weight = row.get("base_weight", 20)
-        weight = estimate_weight(base_weight, req.level, req.goal, req.gender)
+        weight = estimate_weight(base_weight, level, goal, gender)
         routine_items.append({
             "exerciseId": row["id"],
             "sets": sets,

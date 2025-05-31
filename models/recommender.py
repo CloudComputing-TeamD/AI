@@ -5,7 +5,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
-
+import pymysql.cursors  
 
 # 목표별 반복 횟수 (sets x reps)
 rep_ranges = {
@@ -30,7 +30,7 @@ def estimate_weight(base, level, goal, gender):
 # DB에서 운동 정보 가져오기
 def fetch_exercises() -> pd.DataFrame:
     conn = get_connection()
-    with conn.cursor(dictionary=True) as cursor:
+    with conn.cursor(cursor=pymysql.cursors.DictCursor) as cursor:  
         cursor.execute("SELECT * FROM exercises")
         rows = cursor.fetchall()
     conn.close()

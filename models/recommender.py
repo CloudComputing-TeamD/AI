@@ -60,10 +60,10 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
         if not part_df.empty:
             best = part_df.sort_values("score", ascending=False).iloc[0]
             selected.append(best)
-            selected_ids.add(best["exerciseId"])
+            selected_ids.add(best["exercise_id"])
 
     # 나머지 운동은 preferred_parts에 포함되는 부위만 필터링 후 score 기준 정렬
-    remaining = df[~df["exerciseId"].isin(selected_ids)]
+    remaining = df[~df["exercise_id"].isin(selected_ids)]
     remaining = remaining[remaining["target"].apply(lambda target: any(p == target if isinstance(target, str) else p in target for p in req.preferred_parts))]
     remaining = remaining.sort_values("score", ascending=False)
 
@@ -83,7 +83,7 @@ def generate_recommendation(req: RecommendationRequest) -> Dict[str, Any]:
         base_weight = row.get("base_weight", 20)
         weight = estimate_weight(base_weight, level, goal, gender)
         routine_items.append({
-            "exerciseId": int(row["exerciseId"]),
+            "exercise_id": int(row["exercise_id"]),
             "sets": int(sets),
             "reps": int(reps),
             "weight": int(weight),
